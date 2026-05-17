@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Courier+Prime&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Lora:ital,wght@0,400;0,600&family=MedievalSharp&family=Uncial+Antiqua&display=swap');
-
+@import 'leaflet/dist/leaflet.css';
 @import "tailwindcss";
 
 @theme {

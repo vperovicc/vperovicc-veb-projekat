@@ -4,13 +4,15 @@ import { Link as RouterLink } from 'react-router-dom';
 import { travelPlanService } from '../services/travelPlanService';
 import type { TravelPlan } from '../models/types';
 import { format } from 'date-fns';
-import { Calendar, Scroll, Coins, ArrowRight, Compass, AlertCircle, Plus } from 'lucide-react';
+import { Calendar, Scroll, Coins, ArrowRight, Compass, AlertCircle, Plus, Shield } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 
 const Dashboard = () => {
   const [plans, setPlans] = useState<TravelPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
     const fetchJourneys = async () => {
@@ -43,6 +45,29 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Admin Quick-Access Banner */}
+      {isAdmin() && (
+        <RouterLink
+          to="/admin"
+          className="flex items-center justify-between gap-3 px-5 py-3 bg-rust/10 border border-rust/40 rounded-sm hover:bg-rust/20 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-rust" />
+            <div>
+              <p className="font-display text-sm text-rust uppercase tracking-wide">Administrator Access Active</p>
+              <p className="font-functional text-xs text-ink-light">Open Guild Core Control Panel →</p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-rust transition-transform group-hover:translate-x-1" />
+        </RouterLink>
+      )}
+
+      {/* Role debug strip — remove after confirming admin works */}
+      {import.meta.env.DEV && (
+        <div className="text-[10px] font-mono text-ink-light/50 bg-cream/50 border border-sepia/20 px-3 py-1 rounded-sm">
+          DEV: role=<strong>{user?.role ?? 'undefined'}</strong> · isAdmin={String(isAdmin())} · userId={user?.userId ?? '?'}
+        </div>
+      )}
       {/* Dynamic Header Frame with Navigation Button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-sepia/30 pb-4">
         <div>

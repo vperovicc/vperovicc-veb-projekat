@@ -1,25 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Shield, Users, Scroll, Trash2, Ban } from 'lucide-react';
-import api from '../services/api';
+import { Shield, Users, Scroll, Trash2 } from 'lucide-react';
+import { adminService } from '../services/adminService';
+import type { User, TravelPlan } from '../models/types';
 
 export const AdminDashboard = () => {
-  const [users, setUsers] = useState<any[]>([]);
-  const [plans, setPlans] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [plans, setPlans] = useState<TravelPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAdminData = async () => {
     try {
       setLoading(true);
-      // Fetch both entities concurrently via the administrative gateway endpoints
-      const [usersRes, plansRes] = await Promise.all([
-        api.get<any[]>('/api/admin/users'),
-        api.get<any[]>('/api/admin/travel-plans')
+      setError(null);
+      const [usersData, plansData] = await Promise.all([
+        adminService.getAllUsers(),
+        adminService.getAllPlans()
       ]);
-      setUsers(usersRes.data);
-      setPlans(plansRes.data);
+      setUsers(usersData);
+      setPlans(plansData);
     } catch (err: any) {
-      setError("Failed to gather master logs. Verify administrative JWT role clearance.");
+      setError("Failed to gather master logs. Verify administrative role clearance keys.");
     } finally {
       setLoading(false);
     }
@@ -30,83 +31,68 @@ export const AdminDashboard = () => {
   }, []);
 
   const handleDeactivateUser = async (userId: number) => {
-    if (!window.confirm("Revoke this user's registry access credentials?")) return;
+    if (!window.confirm("Revoke this archivist's registry access credentials?")) return;
     try {
-      await api.put(`/api/admin/users/${userId}/deactivate`);
-      fetchAdminData(); // Refresh records
+      await adminService.deactivateUser(userId);
+      fetchAdminData();
     } catch (err) {
-      alert("Failed to restrict user access.");
+      alert("Failed to freeze user access permissions.");
     }
   };
 
   const handleDeletePlan = async (planId: number) => {
-    if (!window.confirm("Permanently erase this expedition from the master files? This action is irreversible.")) return;
+    if (!window.confirm("Purge this journey ledger entry permanently from global matrices?")) return;
     try {
-      await api.delete(`/api/admin/travel-plans/${planId}`);
-      fetchAdminData(); // Refresh records
+      await adminService.deletePlan(planId);
+      fetchAdminData();
     } catch (err) {
-      alert("Failed to strike record.");
+      alert("Failed to burn target journey ledger layout.");
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[50vh] flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rust"></div>
-        <p className="mt-2 font-display text-xs tracking-wider text-sepia uppercase">Opening Master Imperial Ledger...</p>
-      </div>
-    );
-  }
+  if (loading) return <div className="p-8 text-center font-display text-rust animate-pulse">Querying Guild Core Security Ledgers...</div>;
+  if (error) return <div className="p-6 bg-cream border border-rust text-rust font-display text-center rounded-sm max-w-md mx-auto mt-12">{error}</div>;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      
-      {/* Title Header */}
-      <div className="flex items-center gap-3 border-b border-sepia/30 pb-4">
+    <div className="space-y-8 max-w-6xl mx-auto">
+      <div className="border-b-2 border-sepia pb-4 flex items-center gap-3">
         <Shield className="w-8 h-8 text-rust" />
         <div>
-          <h1 className="text-3xl font-display text-ink">High Guard Administrative Archives</h1>
-          <p className="font-functional text-sm text-ink-light">Global overview of system operations, users, and logged itineraries.</p>
+          <h1 className="font-display text-2xl text-ink uppercase tracking-wide">Guild Matrix Core Controls</h1>
+          <p className="font-body text-xs text-ink-light italic">High Command Sovereign Administrative Oversight Supervision Dashboard</p>
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-900/10 border border-rust text-rust font-functional text-sm rounded-sm">
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* USERS MANAGEMENT MATRIX */}
+      <div className="grid md:grid-cols-2 gap-8">
+        {/* User Management Ledger Box */}
         <div className="bg-parchment-dark p-5 rounded-sm border border-sepia/30 shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-sepia/20 pb-2">
             <Users className="w-5 h-5 text-sepia" />
-            <h2 className="font-display text-lg text-ink">Registered Cartographers ({users.length})</h2>
+            <h2 className="font-display text-base text-ink uppercase">Archivist Registry Logs ({users.length})</h2>
           </div>
-          
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-functional border-collapse">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-sepia/30 text-ink uppercase tracking-wider">
+                <tr className="border-b border-sepia/30 text-ink font-functional uppercase">
                   <th className="py-2">Identity</th>
-                  <th className="py-2">Guild Email</th>
-                  <th className="py-2 text-right">Actions</th>
+                  <th className="py-2">Role</th>
+                  <th className="py-2 text-right">Sanctions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-sepia/15 font-body text-sm">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-cream/30">
-                    <td className="py-2.5 font-medium">{u.firstName} {u.lastName}</td>
-                    <td className="py-2.5 font-mono text-xs text-ink-light">{u.email}</td>
+                {users.map(u => (u.id &&
+                  <tr key={u.id} className="hover:bg-cream/40">
+                    <td className="py-2.5">
+                      <div className="font-semibold text-ink">{u.firstName} {u.lastName}</div>
+                      <div className="text-[10px] text-ink-light/70 font-mono select-all">{u.email}</div>
+                    </td>
+                    <td className="py-2.5 font-label text-[10px]"><span className={u.role === 'Admin' ? 'text-rust font-bold' : 'text-ink-light'}>{u.role}</span></td>
                     <td className="py-2.5 text-right">
-                      <button 
-                        onClick={() => handleDeactivateUser(u.id)}
-                        className="text-rust hover:text-rust-light p-1" 
-                        title="Deactivate Guild Access"
-                      >
-                        <Ban className="w-4 h-4 inline" />
-                      </button>
+                      {u.isActive ? (
+                        <button onClick={() => handleDeactivateUser(u.id)} className="text-xs bg-cream hover:bg-rust hover:text-parchment px-2 py-1 border border-sepia/30 rounded-xs transition-colors">Exile</button>
+                      ) : (
+                        <span className="text-[11px] font-functional text-rust italic">Banished</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -115,17 +101,16 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* GLOBAL EXPEDITIONS CONTROLLER */}
+        {/* Plan Manifest Management Box */}
         <div className="bg-parchment-dark p-5 rounded-sm border border-sepia/30 shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-sepia/20 pb-2">
             <Scroll className="w-5 h-5 text-sepia" />
-            <h2 className="font-display text-lg text-ink">Master Ledger Manifests ({plans.length})</h2>
+            <h2 className="font-display text-base text-ink uppercase">Master Ledger Manifests ({plans.length})</h2>
           </div>
-
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-functional border-collapse">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-sepia/30 text-ink uppercase tracking-wider">
+                <tr className="border-b border-sepia/30 text-ink uppercase">
                   <th className="py-2">Journey Title</th>
                   <th className="py-2">Treasury Alloc.</th>
                   <th className="py-2 text-right">Actions</th>
@@ -134,14 +119,10 @@ export const AdminDashboard = () => {
               <tbody className="divide-y divide-sepia/15 font-body text-sm">
                 {plans.map(p => (
                   <tr key={p.id} className="hover:bg-cream/30">
-                    <td className="py-2.5 font-medium truncate max-w-[180px]">{p.name}</td>
+                    <td className="py-2.5 font-medium truncate max-w-[180px] text-ink uppercase font-display text-xs">{p.name}</td>
                     <td className="py-2.5 font-mono text-xs text-ink-light">{p.budget} Coins</td>
                     <td className="py-2.5 text-right">
-                      <button 
-                        onClick={() => handleDeletePlan(p.id)}
-                        className="text-red-900 hover:text-red-700 p-1" 
-                        title="Purge Document"
-                      >
+                      <button onClick={() => handleDeletePlan(p.id)} className="text-rust hover:text-red-600 p-1" title="Purge Document">
                         <Trash2 className="w-4 h-4 inline" />
                       </button>
                     </td>
@@ -151,7 +132,6 @@ export const AdminDashboard = () => {
             </table>
           </div>
         </div>
-
       </div>
     </div>
   );

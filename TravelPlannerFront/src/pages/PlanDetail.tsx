@@ -4,15 +4,19 @@ import { format } from 'date-fns';
 import QRCode from 'react-qr-code';
 import { 
   Scroll, Calendar, Coins, MapPin, CheckSquare, 
-  Share2, ShieldAlert, Activity, ClipboardList, Trash2, ArrowLeft, Plus, Check
+  Share2, ShieldAlert, Activity, ClipboardList, Trash2, ArrowLeft, Plus, Check, Square
 } from 'lucide-react';
 
-import api from '../services/api';
 import { travelPlanService } from '../services/travelPlanService';
-import type { TravelPlan } from '../models/types';
+import { destinationService } from '../services/destinationService';
+import { activityService } from '../services/activityService';
+import { expenseService } from '../services/expenseService';
+import { checklistService } from '../services/checklistService';
+import { sharingService } from '../services/sharingService';
+import type { TravelPlan, ActivityStatus, ExpenseCategory } from '../models/types';
 import { Button } from '../components/ui/Button';
+import { TravelMap } from '../components/TravelMap';
 
-// Safe wrapper fallback for Vite/CJS bundle configurations
 const SafeQRCode = (props: any) => {
   const QRCodeComponent: any = (QRCode as any).default || QRCode;
   try {
@@ -22,10 +26,26 @@ const SafeQRCode = (props: any) => {
   }
 };
 
-const ACTIVITY_STATUSES = ['Planned', 'Reserved', 'Completed', 'Cancelled'];
-const EXPENSE_CATEGORIES = ['Transport', 'Accommodation', 'Food', 'Tickets', 'Shopping', 'Other'];
+const ACTIVITY_STATUSES: ActivityStatus[] = ['Planned', 'Reserved', 'Completed', 'Cancelled'];
+const EXPENSE_CATEGORIES: ExpenseCategory[] = ['Transport', 'Accommodation', 'Food', 'Tickets', 'Shopping', 'Other'];
 
-type ActiveTab = 'overview' | 'destinations' | 'activities' | 'expenses' | 'checklist' | 'share';
+const ACTIVITY_STATUS_MAP: Record<ActivityStatus, number> = {
+  'Planned': 0,
+  'Reserved': 1,
+  'Completed': 2,
+  'Cancelled': 3
+};
+
+const EXPENSE_CATEGORY_MAP: Record<ExpenseCategory, number> = {
+  'Transport': 0,
+  'Accommodation': 1,
+  'Food': 2,
+  'Tickets': 3,
+  'Shopping': 4,
+  'Other': 5
+};
+
+type ActiveTab = 'overview' | 'destinations' | 'activities' | 'expenses' | 'checklist' | 'share' | 'map';
 
 export const PlanDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -36,16 +56,14 @@ export const PlanDetail = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
 
-  // Share specific state configuration (Isolated to prevent full page unmounting)
   const [sharePermission, setSharePermission] = useState<number>(0);
   const [generatedLink, setGeneratedLink] = useState<string>('');
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
 
-  // Sub-forms Entry Inline States
   const [destForm, setDestForm] = useState({ name: '', arrivalDate: '', departureDate: '', description: '' });
-  const [actForm, setActForm] = useState({ name: '', description: '', dateTime: '', location: '', status: 0 });
-  const [expForm, setExpForm] = useState({ title: '', amount: '', category: 0 });
+  const [actForm, setActForm] = useState({ name: '', description: '', dateTime: '', location: '', status: 'Planned' as ActivityStatus });
+  const [expForm, setExpForm] = useState({ name: '', amount: '', category: 'Transport' as ExpenseCategory });
   const [checkForm, setCheckForm] = useState({ title: '' });
 
   const fetchPlanDetails = async () => {
@@ -82,92 +100,107 @@ export const PlanDetail = () => {
       setShareLoading(true);
       setShareError(null);
       
-      const response = await api.post('/api/shares', {
-        travelPlanId: Number(id),
-        permissionLevel: sharePermission
-      });
-      
-      const token = response.data.token;
-      const pathLink = `${window.location.origin}/shared-plans/${token}?perm=${sharePermission}`;
+      const response = await sharingService.createToken(Number(id), sharePermission);
+      const pathLink = `${window.location.origin}/shared-plans/${response.token}?perm=${sharePermission}`;
       setGeneratedLink(pathLink);
     } catch (err: any) {
-      setShareError(err.response?.data?.message || "Failed to issue wax share seal credentials.");
+      setShareError("Failed to issue wax share seal credentials.");
     } finally {
       setShareLoading(false);
     }
   };
 
-  // Sub-Manifest Content Appends
   const addDestination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destForm.name || !destForm.arrivalDate || !destForm.departureDate) return;
+    
+    // Strict Verification Rule Alignment
+    if (new Date(destForm.departureDate) < new Date(destForm.arrivalDate)) {
+      alert("The departure date cannot precede the arrival date.");
+      return;
+    }
+
     try {
-      await api.post(`/api/destinations`, { ...destForm, travelPlanId: Number(id) });
+      await destinationService.create(Number(id), {
+        name: destForm.name,
+        location: destForm.name,
+        arrivalDate: destForm.arrivalDate,
+      departureDate: destForm.departureDate,
+        description: destForm.description || '',
+        notes: ''
+      });
       setDestForm({ name: '', arrivalDate: '', departureDate: '', description: '' });
       fetchPlanDetails();
     } catch (err) { alert("Failed to log waypoint."); }
   };
 
   const addActivity = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!actForm.name || !actForm.dateTime) return;
-    try {
-      await api.post(`/api/activities`, { ...actForm, status: Number(actForm.status), travelPlanId: Number(id) });
-      setActForm({ name: '', description: '', dateTime: '', location: '', status: 0 });
-      fetchPlanDetails();
-    } catch (err) { alert("Failed to log activity vector."); }
-  };
+  e.preventDefault();
+  if (!actForm.name || !actForm.dateTime) return;
+  try {
+    await activityService.create(Number(id), {
+      name: actForm.name,
+      date: actForm.dateTime + ':00', // Raw string — no Date constructor, no TZ conversion
+      time: null, // Safely ignored
+      location: actForm.location || 'TBD',
+      description: actForm.description || '',
+      estimatedCost: 0,
+      status: actForm.status
+    });
+    
+    setActForm({ name: '', description: '', dateTime: '', location: '', status: 'Planned' });
+    fetchPlanDetails();
+  } catch (err) { 
+    alert("Failed to log activity vector. Ensure your ApiGateway is reachable."); 
+  }
+};
 
-  const addExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!expForm.title || Number(expForm.amount) <= 0) return;
-    try {
-      await api.post(`/api/expenses`, { 
-        title: expForm.title, 
-        amount: Number(expForm.amount), 
-        category: Number(expForm.category), 
-        travelPlanId: Number(id) 
-      });
-      setExpForm({ title: '', amount: '', category: 0 });
-      fetchPlanDetails();
-    } catch (err) { alert("Failed to log ledger expense transaction."); }
-  };
+const addExpense = async (e: React.FormEvent) => {
+  e.preventDefault();
+  const amountNum = Number(expForm.amount);
+  if (!expForm.name || amountNum <= 0) {
+    alert("Expense amount must be greater than zero.");
+    return;
+  }
+  try {
+    await expenseService.create(Number(id), {
+      name: expForm.name,
+      amount: amountNum,
+      category: expForm.category, // <-- FIXED: Pass the string directly. The service maps it.
+      date: new Date().toISOString(),
+      description: ''
+    });
+    setExpForm({ name: '', amount: '', category: 'Transport' });
+    fetchPlanDetails();
+  } catch (err) { 
+    alert("Failed to audit resource coins."); 
+  }
+};
 
   const addChecklistItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkForm.title) return;
+    if (!checkForm.title.trim()) return;
     try {
-      await api.post(`/api/checklist`, { title: checkForm.title, isCompleted: false, travelPlanId: Number(id) });
+      await checklistService.create(Number(id), checkForm.title.trim());
       setCheckForm({ title: '' });
       fetchPlanDetails();
-    } catch (err) { alert("Failed to pin checklist item."); }
+    } catch (err) { alert("Failed to catalog packing item."); }
   };
 
   const toggleCheckItem = async (itemId: number, currentStatus: boolean) => {
     try {
-      await api.put(`/api/checklist/${itemId}`, { isCompleted: !currentStatus });
+      await checklistService.toggle(Number(id), itemId, !currentStatus);
       fetchPlanDetails();
-    } catch (err) { alert("Failed to update status marker."); }
+    } catch (err) { alert("Failed to check off provisions ledger."); }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[50vh] flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-rust"></div>
-        <p className="mt-2 font-display text-xs tracking-wider text-sepia uppercase">Unrolling Map Log Manifest...</p>
-      </div>
-    );
-  }
-
+  if (loading) return <div className="p-8 text-center font-display text-ink animate-pulse">Consulting the Grand Cartographer logs...</div>;
   if (error || !plan) {
     return (
-      <div className="bg-parchment-dark p-8 rounded-sm text-center border-2 border-sepia max-w-md mx-auto space-y-4">
+      <div className="p-8 max-w-md mx-auto text-center space-y-4 bg-cream border border-sepia">
         <ShieldAlert className="w-12 h-12 text-rust mx-auto" />
-        <h2 className="text-xl font-display text-ink uppercase">Expedition Unreachable</h2>
-        <p className="font-body text-sm text-ink-light">{error || 'Ledger document empty.'}</p>
-        <Button onClick={() => navigate('/dashboard')} variant="secondary" className="w-full">
-          <ArrowLeft className="w-4 h-4" /> Return to Dashboard
-        </Button>
+        <p className="font-display text-base text-ink">{error || "Expedition map data corrupted."}</p>
+        <Button onClick={() => navigate('/dashboard')} variant="secondary"><ArrowLeft className="w-4 h-4" /> Return to Camp</Button>
       </div>
     );
   }
@@ -176,67 +209,24 @@ export const PlanDetail = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      
-      {/* Upper Navigation Links */}
-      <div className="flex justify-between items-center">
-        <button onClick={() => navigate('/dashboard')} className="flex items-center gap-1.5 font-display text-xs tracking-wider text-sepia hover:text-rust transition-colors uppercase">
-          <ArrowLeft className="w-4 h-4" /> Back to Dashboard
-        </button>
-        <button onClick={handlePurgePlan} className="flex items-center gap-1.5 font-display text-xs tracking-wider text-rust hover:text-rust-light transition-colors uppercase">
-          <Trash2 className="w-3.5 h-3.5" /> Purge Journal
-        </button>
-      </div>
-
-      {/* Main Parchment Document Sheet Header */}
-      <div className="bg-parchment-dark border border-sepia/40 rounded-sm p-6 shadow-md relative">
-        <span className="font-label text-[10px] tracking-widest text-sepia uppercase block mb-1">Central Expedition Ledger</span>
-        <h1 className="text-3xl font-display text-ink tracking-wide">{plan.name}</h1>
-        {plan.description && <p className="font-body text-ink-light italic text-sm mt-1">"{plan.description}"</p>}
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-4 border-t border-sepia/20 text-xs font-functional">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-rust" />
-            <div>
-              <span className="block text-ink-light font-bold">TIMELINE TRANSIT</span>
-              <span>{format(new Date(plan.startDate), 'dd MMM yyyy')} — {format(new Date(plan.endDate), 'dd MMM yyyy')}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Coins className="w-4 h-4 text-gold" />
-            <div>
-              <span className="block text-ink-light font-bold">TOTAL TREASURY ALLOCATION</span>
-              <span className="font-mono text-sm">{plan.budget.toFixed(0)} Coins</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-ink-light" />
-            <div>
-              <span className="block text-ink-light font-bold">VAULT RESERVE STATUS</span>
-              <span className={`font-mono text-sm font-bold ${isOverBudget ? 'text-rust' : 'text-emerald-800'}`}>
-                {plan.remainingBudget.toFixed(0)} Coins {isOverBudget ? 'Deficit' : 'Remaining'}
-              </span>
-            </div>
-          </div>
+      <div className="flex justify-between items-center border-b-2 border-sepia pb-4">
+        <div>
+          <h1 className="font-display text-3xl text-rust uppercase tracking-wide">{plan.name}</h1>
+          <p className="font-body text-sm text-ink-light italic">{plan.description || "No written itinerary record exists for this deployment."}</p>
         </div>
-
-        {plan.notes && (
-          <div className="mt-4 p-3 bg-cream/40 border border-sepia/15 text-xs rounded-sm italic text-ink-light">
-            <strong className="font-label uppercase block tracking-wider not-italic text-[9px] text-sepia mb-0.5">Archivist Marginalia:</strong>
-            {plan.notes}
-          </div>
-        )}
+        <Button variant="danger" onClick={handlePurgePlan} className="text-xs">
+          <Trash2 className="w-4 h-4" /> Scrap Expedition
+        </Button>
       </div>
 
-      {/* Tab Selectors Grid Navigation */}
-      <div className="flex flex-wrap gap-1 border-b border-sepia/30 font-display text-xs tracking-wider">
-        {(['overview', 'destinations', 'activities', 'expenses', 'checklist', 'share'] as ActiveTab[]).map(tab => (
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-sepia/30">
+        {(['overview', 'destinations', 'activities', 'expenses', 'checklist', 'share', 'map'] as ActiveTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 border-t border-x rounded-t-sm transition-all uppercase ${
-              activeTab === tab 
-                ? 'bg-parchment-dark border-sepia/40 text-rust font-bold border-b-parchment relative z-10' 
-                : 'bg-cream/40 border-transparent text-ink-light hover:bg-cream'
+            className={`px-4 py-2 font-display text-xs uppercase tracking-wider border border-b-0 rounded-t-sm transition-all ${
+              activeTab === tab ? 'bg-parchment-dark text-rust border-sepia border-b-parchment font-bold' : 'bg-cream/40 text-ink-light border-transparent hover:bg-cream/80'
             }`}
           >
             {tab}
@@ -244,247 +234,153 @@ export const PlanDetail = () => {
         ))}
       </div>
 
-      {/* Primary Tab Canvas Frame */}
-      <div className="bg-parchment-dark border border-sepia/30 rounded-b-sm p-6 shadow-md min-h-[300px]">
-        
-        {/* TAB 1: OVERVIEW COMPONENT */}
+      {/* Tab Contents Content Panels */}
+      <div className="bg-parchment-dark p-6 border-2 border-sepia shadow-md rounded-sm min-h-[300px]">
         {activeTab === 'overview' && (
-          <div className="space-y-6 font-body text-sm">
-            <div>
-              <h3 className="font-display text-lg text-ink border-b border-sepia/20 pb-1 mb-3">Expedition Summary Statistics</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div className="bg-cream p-3 border border-sepia/20 rounded-sm">
-                  <span className="block text-2xl font-display text-rust">{plan.destinations?.length || 0}</span>
-                  <span className="text-[10px] font-functional text-ink-light uppercase tracking-wider">Fixed Waypoints</span>
-                </div>
-                <div className="bg-cream p-3 border border-sepia/20 rounded-sm">
-                  <span className="block text-2xl font-display text-rust">{plan.activities?.length || 0}</span>
-                  <span className="text-[10px] font-functional text-ink-light uppercase tracking-wider">Itinerary Plans</span>
-                </div>
-                <div className="bg-cream p-3 border border-sepia/20 rounded-sm">
-                  <span className="block text-2xl font-display text-rust">{plan.totalExpenses?.toFixed(0) || 0}</span>
-                  <span className="text-[10px] font-functional text-ink-light uppercase tracking-wider">Spent Gold Coins</span>
-                </div>
-                <div className="bg-cream p-3 border border-sepia/20 rounded-sm">
-                  <span className="block text-2xl font-display text-rust">
-                    {plan.checklistItems?.filter(i => i.isCompleted).length || 0}/{plan.checklistItems?.length || 0}
-                  </span>
-                  <span className="text-[10px] font-functional text-ink-light uppercase tracking-wider">Provisions Packed</span>
-                </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 space-y-4">
+              <h3 className="font-display text-lg text-ink uppercase">Chronicle Marginalia & Observations</h3>
+              <div className="bg-cream p-4 border border-sepia/30 font-body rounded-sm min-h-[100px] whitespace-pre-wrap">
+                {plan.notes || "No secret observations mapped out yet."}
+              </div>
+            </div>
+            <div className="bg-cream p-4 border-2 border-sepia rounded-sm space-y-4 h-fit">
+              <h4 className="font-display text-sm uppercase text-ink border-b border-sepia/20 pb-2">Treasury Check</h4>
+              <div className="flex justify-between font-functional text-xs"><span>Allocated Fund:</span><span className="font-mono">{plan.budget} Coins</span></div>
+              <div className="flex justify-between font-functional text-xs"><span>Total Spent:</span><span className="font-mono text-rust">{plan.totalExpenses} Coins</span></div>
+              <div className={`flex justify-between font-display text-xs pt-2 border-t border-sepia/20 font-bold ${isOverBudget ? 'text-rust' : 'text-ink'}`}>
+                <span>{isOverBudget ? "Deficit Vault:" : "Remaining Coins:"}</span>
+                <span className="font-mono">{plan.remainingBudget} Coins</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* TAB 2: DESTINATIONS MANIFEST */}
         {activeTab === 'destinations' && (
           <div className="space-y-6">
-            <form onSubmit={addDestination} className="bg-cream p-4 border border-sepia/20 rounded-sm grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-functional items-end">
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Waypoint Title</label>
-                <input type="text" required value={destForm.name} onChange={e => setDestForm({...destForm, name: e.target.value})} placeholder="e.g., Kingdom of Venice" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
+            <form onSubmit={addDestination} className="grid sm:grid-cols-4 gap-3 bg-cream p-4 border border-sepia/30 rounded-sm items-end">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-functional uppercase text-ink-light mb-1">Waypoint Title</label>
+                <input type="text" required value={destForm.name} onChange={e => setDestForm({...destForm, name: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm" placeholder="e.g. Kingdom of Florence" />
               </div>
               <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Arrival Date</label>
-                <input type="date" required value={destForm.arrivalDate} onChange={e => setDestForm({...destForm, arrivalDate: e.target.value})} className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
+                <label className="block text-[11px] font-functional uppercase text-ink-light mb-1">Arrival</label>
+                <input type="date" required value={destForm.arrivalDate} onChange={e => setDestForm({...destForm, arrivalDate: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm font-mono" />
               </div>
               <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Departure Date</label>
-                <input type="date" required value={destForm.departureDate} onChange={e => setDestForm({...destForm, departureDate: e.target.value})} className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
+                <label className="block text-[11px] font-functional uppercase text-ink-light mb-1">Departure</label>
+                <input type="date" required value={destForm.departureDate} onChange={e => setDestForm({...destForm, departureDate: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm font-mono" />
               </div>
-              <div className="sm:col-span-3 flex justify-end">
-                <Button type="submit" className="text-xs py-1 px-3"><Plus className="w-3.5 h-3.5" /> Append Coordinate Vector</Button>
+              <div className="sm:col-span-4 flex justify-end">
+                <Button type="submit" className="text-xs"><Plus className="w-3 h-3"/> Map Waypoint</Button>
               </div>
             </form>
-
             <div className="space-y-3">
-              {!plan.destinations || plan.destinations.length === 0 ? (
-                <p className="text-sm italic text-ink-light">No fixed chart targets pinned to this route.</p>
-              ) : (
-                plan.destinations.map(d => (
-                  <div key={d.id} className="bg-cream p-4 border border-sepia/20 rounded-sm flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-rust shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="font-display text-base text-ink">{d.name}</h4>
-                      <p className="text-xs font-functional text-ink-light">
-                        Transit Window: {format(new Date(d.arrivalDate), 'dd MMM yyyy')} — {format(new Date(d.departureDate), 'dd MMM yyyy')}
-                      </p>
-                    </div>
+              {plan.destinations?.map(d => (
+                <div key={d.id} className="bg-cream p-4 border border-sepia/20 rounded-sm flex justify-between items-center shadow-xs">
+                  <div>
+                    <h4 className="font-display text-base text-ink uppercase">{d.name}</h4>
+                    <p className="font-mono text-xs text-ink-light">
+                      {format(new Date(d.arrivalDate), 'MMM dd, yyyy')} — {format(new Date(d.departureDate), 'MMM dd, yyyy')}
+                    </p>
                   </div>
-                ))
-              )}
+                  <MapPin className="w-5 h-5 text-rust/60" />
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* TAB 3: ACTIVITIES ITINERARY */}
         {activeTab === 'activities' && (
           <div className="space-y-6">
-            <form onSubmit={addActivity} className="bg-cream p-4 border border-sepia/20 rounded-sm grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-functional items-end">
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Activity Vector Title</label>
-                <input type="text" required value={actForm.name} onChange={e => setActForm({...actForm, name: e.target.value})} placeholder="e.g., Secure Tavern Lodging" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
+            <form onSubmit={addActivity} className="bg-cream p-4 border border-sepia/30 rounded-sm space-y-3">
+              <div className="grid sm:grid-cols-3 gap-3">
+                <input type="text" placeholder="Activity Name" required value={actForm.name} onChange={e => setActForm({...actForm, name: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm" />
+                <input type="datetime-local" required value={actForm.dateTime} onChange={e => setActForm({...actForm, dateTime: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm font-mono" />
+                <input type="text" placeholder="Location (e.g. Paris, France)" value={actForm.location} onChange={e => setActForm({...actForm, location: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm" />
               </div>
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Execution Timing</label>
-                <input type="datetime-local" required value={actForm.dateTime} onChange={e => setActForm({...actForm, dateTime: e.target.value})} className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
-              </div>
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Specific Coordinates/Location</label>
-                <input type="text" value={actForm.location} onChange={e => setActForm({...actForm, location: e.target.value})} placeholder="e.g., Old Pier Marketplace" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
-              </div>
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Status Badge</label>
-                <select value={actForm.status} onChange={e => setActForm({...actForm, status: Number(e.target.value)})} className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm">
-                  {ACTIVITY_STATUSES.map((status, idx) => <option key={idx} value={idx}>{status}</option>)}
+              <div className="flex justify-between items-center">
+                <select value={actForm.status} onChange={e => setActForm({...actForm, status: e.target.value as ActivityStatus})} className="bg-parchment/60 border border-sepia/40 text-xs py-1 px-2 font-functional">
+                  {ACTIVITY_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </div>
-              <div className="sm:col-span-2 flex justify-end">
-                <Button type="submit" className="text-xs py-1 px-3"><Plus className="w-3.5 h-3.5" /> Add Task Blueprint</Button>
+                <Button type="submit" className="text-xs"><Plus className="w-3 h-3"/> Order Plan Vector</Button>
               </div>
             </form>
-
-            <div className="space-y-3">
-              {!plan.activities || plan.activities.length === 0 ? (
-                <p className="text-sm italic text-ink-light">No daily tracking agendas written yet.</p>
-              ) : (
-                plan.activities.map(a => (
-                  <div key={a.id} className="bg-cream p-4 border border-sepia/20 rounded-sm flex justify-between items-center">
-                    <div>
-                      <h4 className="font-display text-sm text-ink">{a.name}</h4>
-                      <p className="text-xs text-ink-light font-functional">
-                        Execution: {format(new Date(a.date), 'dd MMM yyyy - HH:mm')} | Location: {a.location || 'Uncharted Coordinates'}
-                      </p>
-                    </div>
-                    <span className="px-2 py-0.5 border border-sepia/30 bg-parchment text-[10px] uppercase font-functional tracking-wider font-bold">
-                      {ACTIVITY_STATUSES[Number(a.status)]}
+            <div className="divide-y divide-sepia/10">
+              {plan.activities?.map(a => (
+                <div key={a.id} className="py-3 flex justify-between items-center">
+                  <div>
+                    <h5 className="font-display text-sm text-ink">{a.name}</h5>
+                    <span className="font-mono text-xs text-ink-light">
+                      {/* String-sliced directly — no Date constructor, no TZ shift */}
+                      Execution: {a.date.substring(0, 10)} @ {a.date.substring(11, 16)} | Location: {a.location || 'Uncharted Coordinates'}
                     </span>
                   </div>
-                ))
-              )}
-            </div>
+                  <span className={`px-2 py-0.5 font-label text-[10px] rounded-sm uppercase border border-sepia/30 shadow-xs ${
+                    a.status === 'Completed' ? 'bg-emerald-800 text-parchment' : a.status === 'Reserved' ? 'bg-blue-900 text-parchment' : 'bg-gold text-ink'
+                  }`}>{a.status}</span>
+                </div>
+              ))}
+          </div>
           </div>
         )}
 
-        {/* TAB 4: TREASURY EXPENSES */}
         {activeTab === 'expenses' && (
           <div className="space-y-6">
-            <form onSubmit={addExpense} className="bg-cream p-4 border border-sepia/20 rounded-sm grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-functional items-end">
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Transaction Title</label>
-                <input type="text" required value={expForm.title} onChange={e => setExpForm({...expForm, title: e.target.value})} placeholder="e.g., Rations & Supplies" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
-              </div>
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Cost (Gold Coins)</label>
-                <input type="number" required min="0.01" step="0.01" value={expForm.amount} onChange={e => setExpForm({...expForm, amount: e.target.value})} placeholder="0" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm font-mono" />
-              </div>
-              <div>
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Log Category</label>
-                <select value={expForm.category} onChange={e => setExpForm({...expForm, category: Number(e.target.value)})} className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm">
-                  {EXPENSE_CATEGORIES.map((cat, idx) => <option key={idx} value={idx}>{cat}</option>)}
-                </select>
-              </div>
-              <div className="sm:col-span-3 flex justify-end">
-                <Button type="submit" className="text-xs py-1 px-3"><Plus className="w-3.5 h-3.5" /> Transact Gold Coins</Button>
-              </div>
+            <form onSubmit={addExpense} className="grid sm:grid-cols-3 gap-3 bg-cream p-4 border border-sepia/30 rounded-sm items-end">
+              <input type="text" placeholder="Expense Ledger Title" required value={expForm.name} onChange={e => setExpForm({...expForm, name: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm" />
+              <input type="number" placeholder="Coins Cost" required min="1" value={expForm.amount} onChange={e => setExpForm({...expForm, amount: e.target.value})} className="w-full bg-parchment/60 border border-sepia/40 px-2 py-1.5 text-sm font-mono" />
+              <select value={expForm.category} onChange={e => setExpForm({...expForm, category: e.target.value as ExpenseCategory})} className="bg-parchment/60 border border-sepia/40 text-sm py-1.5 px-2 font-functional w-full">
+                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div className="sm:col-span-3 flex justify-end"><Button type="submit" className="text-xs"><Coins className="w-3 h-3"/> Deduct Treasury</Button></div>
             </form>
-
-            <div className="space-y-2">
-              {!plan.expenses || plan.expenses.length === 0 ? (
-                <p className="text-sm italic text-ink-light">Treasury balance sheet is fully clean.</p>
-              ) : (
-                plan.expenses.map(ex => (
-                  <div key={ex.id} className="bg-cream px-4 py-3 border border-sepia/20 rounded-sm flex justify-between items-center font-functional">
-                    <div>
-                      <strong className="font-body text-sm text-ink block">{ex.name}</strong>
-                      <span className="text-[10px] text-sepia uppercase font-bold tracking-wider">{EXPENSE_CATEGORIES[Number(ex.category)]}</span>
-                    </div>
-                    <span className="font-mono text-rust font-bold">-{ex.amount} Coins</span>
-                  </div>
-                ))
-              )}
+            <div className="bg-cream border border-sepia/20 rounded-sm divide-y divide-sepia/10">
+              {plan.expenses?.map(e => (
+                <div key={e.id} className="p-3 flex justify-between items-center font-body text-sm">
+                  <span>{e.name} <span className="text-xs font-mono text-ink-light/60">({e.category})</span></span>
+                  <span className="font-mono font-bold text-rust">-{e.amount} Coins</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* TAB 5: PACKING CHECKLIST */}
         {activeTab === 'checklist' && (
-          <div className="space-y-6">
-            <form onSubmit={addChecklistItem} className="bg-cream p-4 border border-sepia/20 rounded-sm flex gap-3 text-xs font-functional items-end">
-              <div className="flex-1">
-                <label className="block text-ink font-semibold mb-1 uppercase tracking-wider">Item Descriptor</label>
-                <input type="text" required value={checkForm.title} onChange={e => setCheckForm({ title: e.target.value })} placeholder="e.g., Compass Tool Kit, Extra Water Flasks" className="w-full px-2 py-1.5 bg-parchment border border-sepia/40 rounded-sm" />
-              </div>
-              <Button type="submit" className="text-xs py-1.5 px-3"><Plus className="w-3.5 h-3.5" /> Pack Item</Button>
+          <div className="space-y-4">
+            <form onSubmit={addChecklistItem} className="flex gap-2">
+              <input type="text" required placeholder="Packable supply item descriptor..." value={checkForm.title} onChange={e => setCheckForm({ title: e.target.value })} className="flex-1 bg-cream border border-sepia/40 px-3 py-1.5 text-sm rounded-sm" />
+              <Button type="submit" className="text-xs"><Plus className="w-3 h-3"/> Provision</Button>
             </form>
-
-            <div className="divide-y divide-sepia/15 font-body">
-              {!plan.checklistItems || plan.checklistItems.length === 0 ? (
-                <p className="text-sm italic text-ink-light">No gear tracking manifests attached.</p>
-              ) : (
-                plan.checklistItems.map(item => (
-                  <div 
-                    key={item.id} 
-                    onClick={() => toggleCheckItem(item.id, item.isCompleted)}
-                    className="flex items-center gap-3 py-3 px-2 cursor-pointer hover:bg-cream/40 transition-colors select-none"
-                  >
-                    <div className={`w-4 h-4 border border-sepia flex items-center justify-center rounded-sm ${item.isCompleted ? 'bg-rust text-parchment' : 'bg-cream'}`}>
-                      {item.isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
-                    <span className={`text-sm ${item.isCompleted ? 'line-through text-ink-light/50 italic' : 'text-ink'}`}>
-                      {item.name}
-                    </span>
-                  </div>
-                ))
-              )}
+            <div className="grid sm:grid-cols-2 gap-2">
+              {plan.checklistItems?.map(item => (
+                <div key={item.id} onClick={() => toggleCheckItem(item.id, item.isCompleted)} className="bg-cream border border-sepia/20 p-2.5 rounded-sm flex items-center gap-3 cursor-pointer select-none hover:border-rust transition-all">
+                  {item.isCompleted ? <CheckSquare className="w-4 h-4 text-rust" /> : <Square className="w-4 h-4 text-sepia/50" />}
+                  <span className={`text-sm ${item.isCompleted ? 'line-through text-ink-light/40 font-functional' : 'text-ink'}`}>{item.name}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* TAB 6: DIAL SHARE WAX SEAL (Isformed & Safeguarded) */}
         {activeTab === 'share' && (
-          <div className="max-w-md mx-auto text-center space-y-4 font-body">
-            <Share2 className="w-10 h-10 text-sepia mx-auto" />
-            <h3 className="font-display text-lg text-ink uppercase tracking-wide">Melt Wax Authorization Seal</h3>
-            <p className="text-xs font-functional text-ink-light leading-relaxed">
-              Generate a client-side cipher token link and QR code matrix. Anyone with this grid map token key can examine or modify your journal logging notes.
-            </p>
-
-            {shareError && (
-              <div className="p-3 bg-rust/10 border border-rust text-rust text-xs font-functional rounded-sm text-left">
-                {shareError}
-              </div>
-            )}
-
-            <div className="flex justify-center gap-6 py-2 text-xs font-functional">
-              <label className="flex items-center gap-2 font-semibold cursor-pointer">
-                <input type="radio" name="perm" checked={sharePermission === 0} onChange={() => { setSharePermission(0); setGeneratedLink(''); }} className="accent-rust" />
-                Read-Only Spectator
-              </label>
-              <label className="flex items-center gap-2 font-semibold cursor-pointer">
-                <input type="radio" name="perm" checked={sharePermission === 1} onChange={() => { setSharePermission(1); setGeneratedLink(''); }} className="accent-rust" />
-                Allow Document Edits
-              </label>
+          <div className="max-w-md mx-auto text-center space-y-4">
+            <h4 className="font-display text-base text-ink uppercase">Apply Wax Sharing Seals</h4>
+            <div className="flex justify-center gap-6 py-2">
+              <label className="flex items-center gap-2 font-functional text-xs cursor-pointer"><input type="radio" checked={sharePermission === 0} onChange={() => setSharePermission(0)} className="accent-rust" /> Read-Only Spectator</label>
+              <label className="flex items-center gap-2 font-functional text-xs cursor-pointer"><input type="radio" checked={sharePermission === 1} onChange={() => setSharePermission(1)} className="accent-rust" /> Allow Document Edits</label>
             </div>
-
-            <Button onClick={generateShareToken} isLoading={shareLoading} className="text-xs w-full">
-              Melt Wax Seal & Generate Link
-            </Button>
-
+            <Button onClick={generateShareToken} isLoading={shareLoading} className="text-xs w-full">Melt Wax Seal & Issue Token</Button>
             {generatedLink && (
-              <div className="mt-6 space-y-4 p-4 bg-cream border border-sepia/30 rounded-sm shadow-inner">
-                <div className="text-xs font-mono select-all bg-parchment p-2 border border-sepia/20 text-ink overflow-x-auto rounded-sm text-left">
-                  {generatedLink}
-                </div>
-                
-                {/* Securely Isolated QR Component Container Frame */}
-                <div className="bg-white p-3 inline-block rounded-sm border border-sepia/30 shadow-sm mx-auto">
-                  <SafeQRCode value={generatedLink} size={140} className="mx-auto" />
-                </div>
-                <span className="font-label text-[10px] text-sepia tracking-widest uppercase block mt-1">Scan Cipher Matrix Code</span>
+              <div className="p-4 bg-cream border border-sepia/30 rounded-sm space-y-4">
+                <div className="text-[11px] font-mono select-all bg-parchment p-2 border border-sepia/10 break-all">{generatedLink}</div>
+                <div className="bg-white p-3 inline-block rounded-sm border shadow-inner"><SafeQRCode value={generatedLink} size={130} /></div>
               </div>
             )}
           </div>
+        )}
+        {activeTab === 'map' && (
+          <TravelMap activities={plan.activities ?? []} />
         )}
 
       </div>
