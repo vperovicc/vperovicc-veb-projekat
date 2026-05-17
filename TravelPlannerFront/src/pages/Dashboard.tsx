@@ -62,12 +62,6 @@ const Dashboard = () => {
         </RouterLink>
       )}
 
-      {/* Role debug strip — remove after confirming admin works */}
-      {import.meta.env.DEV && (
-        <div className="text-[10px] font-mono text-ink-light/50 bg-cream/50 border border-sepia/20 px-3 py-1 rounded-sm">
-          DEV: role=<strong>{user?.role ?? 'undefined'}</strong> · isAdmin={String(isAdmin())} · userId={user?.userId ?? '?'}
-        </div>
-      )}
       {/* Dynamic Header Frame with Navigation Button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-sepia/30 pb-4">
         <div>

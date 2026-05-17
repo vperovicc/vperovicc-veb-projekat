@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../services/authService';
-import { ShieldAlert, Scroll, User, Mail, Lock, ShieldCheck } from 'lucide-react';
+import { ShieldAlert, Scroll, ShieldCheck, KeyRound } from 'lucide-react';
 
 const Register = () => {
   const [firstName, setFirstName] = useState('');
@@ -9,7 +9,7 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isAdminRole, setIsAdminRole] = useState(false); // Testing Checkbox State
+  const [adminKey, setAdminKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -39,15 +39,9 @@ const Register = () => {
 
     try {
       setSubmitting(true);
-      // Passing selected role parameters to fit backend registry requirements
-      await authService.register({
-        firstName,
-        lastName,
-        email,
-        password,
-        role: isAdminRole ? 'Admin' : 'User'
-      });
-      
+      const payload: any = { firstName, lastName, email, password };
+      if (adminKey.trim()) payload.adminKey = adminKey.trim();
+      await authService.register(payload);
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2000);
     } catch (err: any) {
@@ -107,19 +101,20 @@ const Register = () => {
             <input type="password" required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full px-3 py-1.5 bg-cream border border-sepia/60 rounded-sm" />
           </div>
 
-          {/* TESTING EXPEDITION CLEARANCE OVERRIDE */}
-          <div className="p-3 bg-cream/50 border border-sepia/30 rounded-sm flex items-start gap-2.5 mt-2">
-            <input 
-              type="checkbox" 
-              id="adminCheckbox"
-              checked={isAdminRole} 
-              onChange={e => setIsAdminRole(e.target.checked)} 
-              className="accent-rust mt-0.5 cursor-pointer h-4 w-4"
-            />
-            <label htmlFor="adminCheckbox" className="cursor-pointer text-ink font-body leading-tight">
-              <strong className="font-display block text-[11px] text-rust tracking-wider uppercase mb-0.5">Enlist as High Guard Administrator</strong>
-              Grant account access overrides to review master global archives and delete records (Testing Override).
+          {/* Admin elevation — only works if correct secret key is entered */}
+          <div className="p-3 bg-cream/50 border border-sepia/30 rounded-sm space-y-1.5">
+            <label className="flex items-center gap-1.5 text-ink font-semibold uppercase tracking-wider">
+              <KeyRound className="w-3.5 h-3.5 text-sepia" />
+              Administrator Key <span className="normal-case font-body text-ink-light/60">(optional)</span>
             </label>
+            <input
+              type="password"
+              value={adminKey}
+              onChange={e => setAdminKey(e.target.value)}
+              placeholder="Leave blank for standard enlistment"
+              className="w-full px-3 py-1.5 bg-cream border border-sepia/60 rounded-sm placeholder:text-ink-light/40"
+            />
+            <p className="text-[10px] text-ink-light/60 font-body">If you hold the Guild High Guard key, enter it above to receive Administrator clearance.</p>
           </div>
 
           <button type="submit" disabled={submitting || success} className="w-full py-2.5 bg-rust hover:bg-rust-light text-parchment font-display font-semibold tracking-wide rounded-sm shadow-md transition-colors border border-ink/20 uppercase">

@@ -11,7 +11,7 @@ export const adminService = {
     return res.data;
   },
   deactivateUser: async (userId: number): Promise<void> => {
-    await api.put(`/api/admin/users/${userId}/deactivate`);
+    await api.put(`/api/users/${userId}/deactivate`);
   },
   deletePlan: async (planId: number): Promise<void> => {
     await api.delete(`/api/admin/travel-plans/${planId}`);
