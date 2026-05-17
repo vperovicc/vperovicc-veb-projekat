@@ -10,6 +10,8 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import { CreateTravelPlan } from './pages/CreateTravelPlan';
 import { PlanDetail } from './pages/PlanDetail';
+import { SharedPlanView } from './pages/SharedPlanView';
+import { AdminDashboard } from './pages/AdminDashboard';
 
 function App() {
   return (
@@ -20,6 +22,9 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
+          {/* Public Token Validation Route (No Route Guards Required) */}
+          <Route path="/shared-plans/:token" element={<SharedPlanView />} />
+
           {/* Core App Protected Routes nested within the custom layout frame */}
           <Route path="/dashboard" element={
             <ProtectedRoute>
@@ -29,7 +34,6 @@ function App() {
             </ProtectedRoute>
           } />
           
-          {/* Aligned route pattern to match Dashboard navigation selectors */}
           <Route path="/travel-plans/create" element={
             <ProtectedRoute>
               <Layout>
@@ -38,7 +42,6 @@ function App() {
             </ProtectedRoute>
           } />
 
-          {/* Dynamic route path parsing specific expedition journal indices */}
           <Route path="/travel-plans/:id" element={
             <ProtectedRoute>
               <Layout>
@@ -51,7 +54,7 @@ function App() {
           <Route path="/admin" element={
             <AdminRoute>
               <Layout>
-                <div className="p-8 bg-parchment-dark border-2 border-sepia"><h2>Admin Control Deck</h2></div>
+                <AdminDashboard />
               </Layout>
             </AdminRoute>
           } />
