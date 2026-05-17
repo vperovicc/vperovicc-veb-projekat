@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Courier+Prime&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Lora:ital,wght@0,400;0,600&family=MedievalSharp&family=Uncial+Antiqua&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-parchment: #F2E8D5;
+  --color-parchment-dark: #E8D9BC;
+  --color-ink: #2C1810;
+  --color-ink-light: #5C3D2E;
+  --color-rust: #8B3A2A;
+  --color-rust-light: #C0533F;
+  --color-gold: #B8860B;
+  --color-gold-light: #DAA520;
+  --color-sepia: #704214;
+  --color-cream: #FAF3E0;
+
+  --font-display: 'MedievalSharp', 'Cinzel', serif;
+  --font-body: '"Crimson Text"', '"EB Garamond"', serif;
+  --font-label: '"Uncial Antiqua"', serif;
+  --font-functional: 'Lora', serif;
+  --font-mono: '"Courier Prime"', monospace;
+}
+
+@utility bg-noise {
+  background-image: radial-gradient(rgba(44, 24, 16, 0.03) 1px, transparent 0), 
+                    radial-gradient(rgba(44, 24, 16, 0.03) 1px, transparent 0);
+  background-size: 4px 4px;
+  background-position: 0 0, 2px 2px;
+}
+
+@layer base {
+  body {
+    @apply bg-parchment text-ink font-body min-h-screen antialiased bg-noise;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-wide;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #E8D9BC;
+}
+::-webkit-scrollbar-thumb {
+  background: #704214;
+  border-radius: 4px;
+}
